@@ -11,14 +11,14 @@ import numpy as np
 time_cost=np.zeros(20,)
 for kk in range(20):
     start_time = time.time()
-    M = 20
-    N = 30 + 10 * kk
+    M = 200
+    N = 300 + 100 * kk
     T = 2
     x0 = jnp.zeros((2, M, N))
     dimer = jsmfsb.models.dimer()
     #x0 = x0.at[:, int(M / 2), int(N / 2)].set(lv.m)
-    x0 = x0.at[0, 8:12, :].set(dimer.m[0])
-    x0 = x0.at[1, 8:12, :].set(dimer.m[1])
+    x0 = x0.at[0, 80:120, :].set(dimer.m[0])
+    x0 = x0.at[1, 80:120, :].set(dimer.m[1])
     step_dimer_2d = dimer.step_cle_2d(jnp.array([0.6, 0.6]))
     k0 = jax.random.key(42)
     x1 = step_dimer_2d(k0, x0, 0, T)
@@ -35,7 +35,7 @@ for kk in range(20):
     time_1loop = end_time - start_time
     time_cost[kk] = time_1loop
     print(kk)
-np.savetxt('scletime.txt', time_cost, fmt='%f')
+np.savetxt('scletimex10.txt', time_cost, fmt='%f')
 
 
 # eof

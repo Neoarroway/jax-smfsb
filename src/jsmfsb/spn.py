@@ -767,7 +767,7 @@ class Spn:
 
     def step_cle_2d_dhz(self, d, dt=0.01):
         """
-        XOZ, Dirihlet boundary condition at top and bottom
+        XOZ, Dirihlet boundary condition at top and bottom(z directions)
         Create a function for advancing the state of an SPN by using a simple
         Euler-Maruyama discretisation of the CLE on a 2D regular grid
 
@@ -826,13 +826,18 @@ class Spn:
             return jnp.roll(a, +1, axis=1)
 
         def up(a):
-            return jnp.roll(a, -1, axis=2)
+            a = jnp.roll(a, -1, axis=2)
+            a = a.at[:, :, -1].set(0)  # Dirihlet boudary condition, top and bottom
+            return a
 
         def down(a):
-            return jnp.roll(a, +1, axis=2)
+            a = jnp.roll(a, +1, axis=2)
+            a = a.at[:, :, 0].set(0)  # Dirihlet Boundary condition, top and bottom
+            return a
 
         def laplacian(a):
-            return left(a) + right(a) + up(a) + down(a) - 4 * a
+            return left(a) + right(a) + up(a) + down(a) -4 * a
+            #return left(a) + right(a) + up(a) + down(a) - 4 * a
 
         def rectify(a):
             return jnp.where(a < 0, 0, a)
@@ -853,7 +858,7 @@ class Spn:
                         - jnp.sqrt(a + right(a)) * right(dwt)
                         + jnp.sqrt(a + up(a)) * dwts
                         - jnp.sqrt(a + down(a)) * down(dwts)
-                    ),
+                    )
                 )
             )
             a = rectify(a)
