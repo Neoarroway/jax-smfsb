@@ -767,7 +767,7 @@ class Spn:
 
     def step_cle_2d_dhz(self, d, dt=0.01):
         """
-        XOZ, Dirihlet boundary condition at top and bottom(z directions)
+        XOZ, Dirichlet boundary condition at top and bottom(z directions)
         Create a function for advancing the state of an SPN by using a simple
         Euler-Maruyama discretisation of the CLE on a 2D regular grid
 
@@ -827,17 +827,18 @@ class Spn:
 
         def up(a):
             a = jnp.roll(a, -1, axis=2)
-            a = a.at[:, :, -1].set(0)  # Dirihlet boudary condition, top and bottom
+            a = a.at[:, :, -1].set(0)  # Dirichlet boudary condition, top and bottom
+            #a = a.at[:, :, -1].set(a[:, :, -2])  # Dirichlet boudary condition, top and bottom
             return a
 
         def down(a):
             a = jnp.roll(a, +1, axis=2)
-            a = a.at[:, :, 0].set(0)  # Dirihlet Boundary condition, top and bottom
+            a = a.at[:, :, 0].set(0)  # Dirichlet Boundary condition, top and bottom
+            #a = a.at[:, :, 0].set(a[:, :, 1])  # Dirichlet Boundary condition, top and bottom
             return a
 
         def laplacian(a):
             return left(a) + right(a) + up(a) + down(a) -4 * a
-            #return left(a) + right(a) + up(a) + down(a) - 4 * a
 
         def rectify(a):
             return jnp.where(a < 0, 0, a)
@@ -893,6 +894,137 @@ class Spn:
             return out[tt - 1]
 
         step = jit(step, static_argnums=(3,))
+        return step
+
+
+    def step_gillespie_2d_dhz(self, d, min_haz=1e-10, max_haz=1e07):
+        """
+        XOZ, Dirichlet boundary condition at top and bottom(z directions)
+        Create a function for advancing the state of an SPN by using the
+        Gillespie algorithm on a 2D regular grid
+
+        This method creates a function for advancing the state of an SPN
+        model using the Gillespie algorithm. The resulting function
+        (closure) can be used in conjunction with other functions (such as
+        `sim_time_series_2d`) for simulating realisations of SPN models in space and
+        time.
+
+        Parameters
+        ----------
+        d : array
+          A vector of diffusion coefficients - one coefficient for each
+          reacting species, in order. The coefficient is the reaction
+          rate for a reaction for a molecule moving into an adjacent
+          compartment. The hazard for a given molecule leaving the
+          compartment is therefore four times this value (as it can leave in
+          one of 4 directions).
+        min_haz : float
+          Minimum hazard to consider before assuming 0. Defaults to 1e-10.
+        max_haz : float
+          Maximum hazard to consider before assuming an explosion and
+          bailing out. Defaults to 1e07.
+
+        Returns
+        -------
+        A function which can be used to advance the state of the SPN
+        model by using the Gillespie algorithm. The function closure
+        has arguments `key`, `x0`, `t0`, `deltat`, where `key` is a JAX random
+        key, `x0` is a 3d array with dimensions corresponding to species
+        then two spatial dimensions, representing the initial condition,
+        `t0` represents the time of the initial state, and `deltat`
+        represents the amount of time by which the process should be advanced.
+        The function closure returns an array representing the simulated
+        state of the system at the new time.
+
+        Examples
+        --------
+        >>> import jsmfsb.models
+        >>> import jax
+        >>> import jax.numpy as jnp
+        >>> lv = jsmfsb.models.lv()
+        >>> stepLv2d = lv.step_gillespie_2d(jnp.array([0.6, 0.6]))
+        >>> N = 20
+        >>> x0 = jnp.zeros((2, N, N))
+        >>> x0 = x0.at[:, int(N/2), int(N/2)].set(lv.m)
+        >>> k0 = jax.random.key(42)
+        >>> stepLv2d(k0, x0, 0, 1)
+        """
+        sto = (self.post - self.pre).T
+        u, v = sto.shape
+
+        @jit
+        def advance(state):
+            key, xo, x, t = state
+            key, k1, k2, k3 = jax.random.split(key, 4)
+            hr = jnp.apply_along_axis(lambda xi: self.h(xi, t), 0, x)
+            hrs = jnp.sum(hr, axis=(0))
+            hrss = hrs.sum()
+            hd = jnp.apply_along_axis(lambda xi: xi * d * 4, 0, x)
+            hds = jnp.sum(hd, axis=(0))
+            hdss = hds.sum()
+            h0 = hrss + hdss
+            t = jnp.where(h0 > max_haz, 1e30, t)
+            t = jnp.where(h0 < min_haz, 1e30, t + jax.random.exponential(k1) / h0)
+
+            def diffuse(key, x):
+                uu, m, n = x.shape
+                k1, k2, k3 = jax.random.split(key, 3)
+                r = jax.random.choice(k1, m * n, p=hds.flatten() / hdss)  # pick a box
+                i, j = divmod(r, n)
+                k = jax.random.choice(k2, u, p=hd[:, i, j] / hds[i, j])  # pick species
+                x = x.at[k, i, j].set(x[k, i, j] - 1)  # decrement chosen box
+                un = jax.random.uniform(k3)
+                ind = jnp.where(
+                    un < 0.25,
+                    jnp.array([i, j - 1]),
+                    jnp.where(
+                        un < 0.5,
+                        jnp.array([i, j + 1]),
+                        jnp.where(
+                            un < 0.75, jnp.array([i - 1, j]), jnp.array([i + 1, j])
+                        ),
+                    ),
+                )
+                i = ind[0]
+                j = ind[1]
+                i = jnp.where(i < 0, m - 1, i)
+                i = jnp.where(i > m - 1, 0, i)
+                '''
+                j = jnp.where(j < 0, 0, j)  # no diffusion across y border, dirichlet boundary conditions
+                j = jnp.where(j > n - 1, n - 1, j)   # no diffusion across y border, dirichlet boundary conditions
+                x = x.at[k, i, j].set(x[k, i, j] + 1)  # increment new box
+                '''
+                x = jnp.where(j <0,
+                    x.at[k, i, j].set(x[k, i, j]),
+                    x.at[k, i, j].set(x[k, i, j]+1 )) # increment new box
+                return x
+
+            def react(key, x):
+                uu, m, n = x.shape
+                k1, k2 = jax.random.split(key, 2)
+                r = jax.random.choice(k1, m * n, p=hrs.flatten() / hrss)  # pick a box
+                i, j = divmod(r, n)
+                k = jax.random.choice(
+                    k2, v, p=hr[:, i, j] / hrs[i, j]
+                )  # pick a reaction
+                x = x.at[:, i, j].set(jnp.add(x[:, i, j], sto[:, k]))
+                return x
+
+            xn = jnp.where(
+                jax.random.uniform(k2) * h0 < hdss, diffuse(k3, x), react(k3, x)
+            )
+            return (key, x, xn, t)
+
+        @jit
+        def step(key, x0, t0, deltat):
+            t = t0
+            x = x0
+            termt = t0 + deltat
+            key, x, xn, t = jl.while_loop(
+                lambda state: state[3] < termt, advance, (key, x, x, t)
+            )
+            return x
+
         return step
 
 
