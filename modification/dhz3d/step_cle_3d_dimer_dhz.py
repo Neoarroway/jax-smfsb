@@ -17,8 +17,9 @@ for kk in range(1):
     T = 2
     x0 = jnp.zeros((2, M, N, H))
     dimer = jsmfsb.models.dimer()
-    #x0 = x0.at[:, int(M / 2), int(N / 2)].set(lv.m)
-    x0 = x0.at[0, 8:12, :, 0:-10].set(dimer.m[0])
+    #x0 = x0.at[0, 8:12, :, 0:-10].set(dimer.m[0])
+    #x0 = x0.at[1, 8:12, :, 0:-10].set(dimer.m[1])
+    x0 = x0.at[0, 8:12, :, 0:-10].set(301)
     x0 = x0.at[1, 8:12, :, 0:-10].set(dimer.m[1])
     step_dimer_3d = dimer.step_cle_3d_dhz(jnp.array([0.6, 0.6]))
     k0 = jax.random.key(42)

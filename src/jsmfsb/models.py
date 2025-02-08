@@ -72,6 +72,40 @@ def dimer(th=[0.00166, 0.2]):
         [301, 0],
     )
 
+def dimer2(th=[0.01, 0.0]):
+    """Create a dimerisation kinetics model
+
+    Create and return a Spn object representing a discrete stochastic
+    dimerisation kinetics model.
+
+    Parameters
+    ----------
+    th: array
+        array of length 2 containing the rates of the bind and unbind reactions
+
+    Returns
+    -------
+    Spn model object with rates `th`
+
+    Examples
+    --------
+    >>> import jsmfsb
+    >>> import jax
+    >>> dimer = jsmfsb.models.dimer()
+    >>> step = dimer.step_gillespie()
+    >>> k = jax.random.key(42)
+    >>> jsmfsb.sim_time_series(k, dimer.m, 0, 50, 0.1, step)
+    """
+    return Spn(
+        ["P", "P2"],
+        ["Dim", "Diss"],
+        [[2, 0], [0, 1]],
+        [[0, 1], [2, 0]],
+        lambda x, t: jnp.array([th[0] * x[0] * (x[0] - 1) / 2, th[1] * x[1]]),
+        [301, 0],
+    )
+
+
 
 def id(th=[1, 0.1]):
     """Create an immigration-death model
